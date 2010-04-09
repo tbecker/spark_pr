@@ -5,19 +5,19 @@
 # {Dan Nugent}[mailto:nugend@gmail.com] and {Geoffrey Grosenbach}[mailto:boss@topfunky.com]
 #
 # png creation based on http://www.whytheluckystiff.net/bumpspark/
-
+ 
 class SparkCanvas
   require 'zlib'
   
   attr_accessor :color
   attr_reader :width, :height
   
-  def initialize(width,height)
+  def initialize(width,height,color = [0,0,0,0xFF])
     @canvas = []
     @height = height
     @width = width
     height.times{ @canvas << [[0xFF,0xFF,0xFF]]*width }
-    @color = [0,0,0,0xFF] #RGBA
+    @color = color #[0,0,0,0xFF] #RGBA
   end
   
   # alpha blends two colors, using the alpha given by c2
@@ -87,7 +87,10 @@ class SparkCanvas
   end
     
   def polyline(arr)
-    (0...arr.size-1).each{ |i| line(arr[i][0], arr[i][1], arr[i+1][0], arr[i+1][1]) }
+    (0...arr.size-1).each{ |i|
+#      RAILS_DEFAULT_LOGGER.error "#{arr[i][0]}, #{arr[i][1]}, #{arr[i+1][0]}, #{arr[i+1][1]}"  #TB100326
+       line(arr[i][0], arr[i][1], arr[i+1][0], arr[i+1][1]) 
+      }
   end
   
   def to_png
@@ -205,6 +208,61 @@ module Spark
         
     c
   end
+
+  def Spark.bullet( value, options = {} )
+    options = self.process_options(options)
+    o = {
+      :height => 14,
+      :upper => 0.5,
+      :good_color => [0x00, 0x00, 0xFF, 0x80], #[0xB0, 0xB0, 0xB0, 0xFF],
+      :satisfactory_color => [0x00, 0x00, 0xAA, 0x80],
+      :bad_color => [0x80, 0x00, 0x80, 0x80],
+      :bullet_color => [0x66,0x66,0x66,0xFF]
+    }.merge(options)
+    o[:width] ||= 100
+
+    c = SparkCanvas.new(o[:width], o[:height])
+    
+    @thickness = o[:height]/3.0
+ 
+ 
+    @value = value
+    @max_value=o[:good].to_f
+    @values = [o[:bad].to_f, o[:satisfactory].to_f, o[:good].to_f]
+    @qualitative_range_colors =[o[:bad_color], o[:satisfactory_color], o[:good_color] ] 
+ 
+    @graph_height = o[:height]
+    @graph_width = o[:width]
+    
+    [:bad, :satisfactory, :good].each_with_index do |indicator, index|
+      next unless o.has_key?(indicator)
+      c.color=@qualitative_range_colors[index]
+      if index == 0
+        indicator_start_x=0
+      else
+        indicator_start_x=@graph_width * (@values[index-1] / @max_value)+1
+      end
+      indicator_width_x  = @graph_width * (@values[index] / @max_value)
+      c.rectangle(indicator_start_x, 0, indicator_width_x.to_i, @graph_height)
+    end
+ 
+    if o.has_key?(:target)
+      c.color=o[:bullet_color]
+      target=o[:target].to_f
+      target_x = @graph_width * ( target / @max_value)
+      half_thickness = (@thickness / 2.0).to_i
+      bar_width = 1.0
+      c.rectangle(target_x.to_i, half_thickness, (target_x + bar_width).to_i, @thickness * 2 + half_thickness)
+    end
+ 
+    # Value
+    c.color=o[:bullet_color]
+    c.rectangle(0, @thickness.to_i, @graph_width * (@value / @max_value), (@thickness * 2.0).to_i)
+ 
+    c
+  end
+
+
   
   # convenience method
   def Spark.plot( results, options = {})
@@ -213,15 +271,20 @@ module Spark
     self.send(options[:type], results, options).to_png
   end
 end
-
+ 
 #to test this: 
 #PNG output
 File.open( 'test.png', 'wb' ) do |png|
   png << Spark.plot( [47, 43, 24, 47, 16, 28, 38, 57, 50, 76, 42, 20, 98, 34, 53, 1, 55, 74, 63, 38, 31, 98, 89], :has_min => true, :has_max => true, 'has_last' => 'true', 'height' => '40', :step => 10, :normalize => 'logarithmic' )
 end
-
+ 
 #ASCII output
 puts Spark.discrete( [47, 43, 24, 47, 16, 28, 38, 57, 50, 76, 42, 1, 98, 34, 53, 97, 55, 74, 63, 38, 31, 98, 89], :has_min => true, :has_max => true, :height => 14, :step => 5 ).to_ascii
 puts Spark.smooth( [47, 43, 24, 47, 16, 28, 38, 57, 50, 76, 42, 1, 98, 34, 53, 97, 55, 74, 63, 38, 31, 98, 89], :has_min => true, :has_max => true, :height => 14, :step => 4 ).to_ascii
 
-    
+#bullet test
+File.open( 'testbullet.png', 'wb' ) do |png|
+  png << Spark.plot( 85 , {    :type => :bullet, :target => 90, :bad => 60, :satisfactory => 80, :good => 100,:height => 15,
+      :bad_color => [168, 255, 255, 0xAA],:satisfactory_color => [128, 128, 128, 0x90], :good_color => [192, 192, 192, 0x70],
+                                    :bullet_color => [0x00, 0x00, 0x00, 0xAA]})
+end
